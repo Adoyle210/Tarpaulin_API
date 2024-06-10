@@ -17,6 +17,7 @@ const {
   UserSchema,
   getUserById,
   validateCredentials,
+  UserClientFields,
 } = require("../models/user");
 const { Course, getCourseById } = require("../models/course"); // or this
 
@@ -24,7 +25,7 @@ const { Course, getCourseById } = require("../models/course"); // or this
 const {
   generateAuthToken,
   requireAuthentication,
-  checkIfAdmin,
+  postUserVerification,
 } = require("../lib/auth");
 
 const router = Router();
@@ -32,11 +33,11 @@ const router = Router();
 //POST //users
 // Create and store a new application User with specified data and adds it to the application's database.
 // Only an authenticated User with 'admin' role can create users with the 'admin' or 'instructor' roles.
-router.post("/", checkIfAdmin, async function (req, res, next) {
+router.post("/", postUserVerification, async function (req, res, next) {
   try {
     // deal with password hashing here
     const hash = await bcrypt.hash(req.body.password, 8);
-    console.log("the hash!::: ", hash);
+    // console.log("the hash!::: ", hash);
     //
     const user = await UserSchema.create(
       { ...req.body, password: hash },
@@ -56,9 +57,10 @@ router.post("/", checkIfAdmin, async function (req, res, next) {
 // Authenticate a specific User with their email address and password.
 router.post("/login", async function (req, res, next) {
   try {
-    const auth = await validateCredentials(req.body.id, req.body.password);
+    const auth = await validateCredentials(req.body.email, req.body.password);
+
     if (auth) {
-      const token = generateAuthToken(req.body.id);
+      const token = generateAuthToken(req.body.email);
       res.status(200).send({
         token: token,
       });
