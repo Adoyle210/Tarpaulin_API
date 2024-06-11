@@ -1,10 +1,10 @@
 const { DataTypes } = require("sequelize");
-const { UserSchema } = require("./user");
+const { User } = require("./user");
 
 const sequelize = require("../lib/sequelize");
 
 const Course = sequelize.define("course", {
-  courseID: { type: DataTypes.STRING, allowNull: false },
+  // courseID: { type: DataTypes.STRING, allowNull: false },
   subject: { type: DataTypes.STRING, allowNull: false },
   number: { type: DataTypes.STRING, allowNull: false },
   title: { type: DataTypes.STRING, allowNull: false },
@@ -14,7 +14,7 @@ const Course = sequelize.define("course", {
 
 exports.Course = Course;
 exports.CourseClientField = [
-  "courseID",
+  // "courseID",
   "subject",
   "number",
   "title",
@@ -22,8 +22,8 @@ exports.CourseClientField = [
   "instructorId",
 ];
 
-// Course.belongsToMany(UserSchema, { through: "Enrollment" });
-// UserSchema.belongsToMany(Course, { through: "Enrollment" });
+Course.belongsToMany(User, { through: "enrollment" });
+User.belongsToMany(Course, { through: "enrollment" });
 
 exports.insertNewCourse = async function (course) {
   const result = await Course.create(course, exports.CourseClientField);

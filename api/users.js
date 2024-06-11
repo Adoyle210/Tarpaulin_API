@@ -14,7 +14,7 @@ const {
   insertNewSubmission,
 } = require("../models/submission"); // or this
 const {
-  UserSchema,
+  User,
   getUserById,
   validateCredentials,
   UserClientFields,
@@ -41,7 +41,7 @@ router.post("/", postUserVerification, async function (req, res, next) {
     const hash = await bcrypt.hash(req.body.password, 8);
     // console.log("the hash!::: ", hash);
     //
-    const user = await UserSchema.create(
+    const user = await User.create(
       { ...req.body, password: hash },
       UserClientFields
     );

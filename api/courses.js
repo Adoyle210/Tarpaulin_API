@@ -7,7 +7,7 @@ const {
   AssignmentClientFields,
   getAssignmentById,
 } = require("../models/assignment");
-const { UserSchema, getUserById } = require("../models/user");
+const { User, getUserById } = require("../models/user");
 const { Course, getCourseById, insertNewCourse } = require("../models/course");
 
 //adding auth
@@ -111,7 +111,7 @@ router.post(
 
           if (enroll) {
             for (const studentId of enroll) {
-              const student = await UserSchema.findByPk(studentId);
+              const student = await User.findByPk(studentId);
               if (student && student.role === "student") {
                 await course.addStudent(student);
               }
@@ -120,7 +120,7 @@ router.post(
 
           if (unenroll) {
             for (const studentId of unenroll) {
-              const student = await UserSchema.findByPk(studentId);
+              const student = await User.findByPk(studentId);
               if (student) {
                 await course.removeStudent(student);
               }
