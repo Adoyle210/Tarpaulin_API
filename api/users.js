@@ -18,6 +18,8 @@ const {
   getUserById,
   validateCredentials,
   UserClientFields,
+  getUserByEmail,
+  getUserRecord,
 } = require("../models/user");
 const { Course, getCourseById } = require("../models/course"); // or this
 
@@ -75,33 +77,25 @@ router.post("/login", async function (req, res, next) {
 });
 
 //GET //users/:id
-// Returns information about the specified User.  If the User has the 'instructor' role, the response should include a list of the IDs of the
-//Courses the User teaches (i.e. Courses whose instructorId field matches the ID of this User).  If the User has the 'student' role, the response
-//should include a list of the IDs of the Courses the User is enrolled in.  Only an authenticated User whose ID matches the ID of the requested User
-//can fetch this information.
+// Returns information about the specified User.
+// If the User has the 'instructor' role, the response should include a list of the IDs of the Courses the User teaches (i.e. Courses whose instructorId field matches the ID of this User).
+// If the User has the 'student' role, the response should include a list of the IDs of the Courses the User is enrolled in.
+// Only an authenticated User whose ID matches the ID of the requested User can fetch this information.
 router.get("/:userId", requireAuthentication, async function (req, res, next) {
-  // get user based on userid, then check admin for authorization check
-  const user = await getUserById(req.user);
-  if (!user.admin) {
-    if (req.user != req.params.userId) {
-      res.status(403).send({
-        error: "Not Authorized to Access",
-      });
-    }
-  }
-  const userId = req.params.userId;
-  try {
-    const user = await UserSchema.findByPk(userId, {
-      // exclude field named password
-      attributes: { exclude: ["password"] },
-    });
-    if (user) {
+  const requestedUser = await getUserById(req.params.userId, false);
+  const loggedInUser = await getUserByEmail(req.user, false);
+  if (requestedUser) {
+    if (loggedInUser.email == requestedUser.email) {
+      const user = await getUserRecord(requestedUser);
       res.status(200).send(user);
     } else {
-      next();
+      res.status(403).send({
+        error: "Invalid credentials for the requested information",
+      });
     }
-  } catch (e) {
-    next(e);
+  } else {
+    // requesteduser dne
+    next();
   }
 });
 
