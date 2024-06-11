@@ -5,19 +5,25 @@ const bcrypt = require("bcryptjs");
 const { extractValidFields } = require("../lib/validation");
 
 const UserSchema = sequelize.define("user", {
-  userID: { type: DataTypes.INTEGER, allowNull: false },
+  name: { type: DataTypes.STRING, allowNull: false },
   email: { type: DataTypes.STRING, allowNull: false, unique: true },
-  password: { type: DataTypes.STRING, allowNull: true },
-  role: { type: DataTypes.STRING, allowNull: false },
-  courseId: { type: DataTypes.STRING, allowNull: true },
+  password: { type: DataTypes.STRING, allowNull: false },
+  role: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: "student",
+    validate: {
+      isIn: [["student", "admin", "instructor"]],
+    },
+  },
 });
 
 exports.UserSchema = UserSchema;
-exports.UserClientFields = ["userID", "email", "password", "role", "courseId"];
+exports.UserClientFields = ["name", "email", "password", "role"];
 
-exports.validateCredentials = async function (id, password) {
-  //get user by id, including password in return
-  const user = await UserSchema.findByPk(id, {});
+exports.validateCredentials = async function (email, password) {
+  // Find user by email
+  const user = await UserSchema.findOne({ where: { email } });
   //decypt pass
   if (user) {
     return bcrypt.compare(password, user.password);
@@ -42,13 +48,22 @@ exports.getUserById = async function (id, includePassword) {
 };
 
 exports.getUserByEmail = async function (userEmail, includePassword) {
-  const user = await UserSchema.findAll({
-    where: {
-      email: userEmail,
-    },
-  });
-  if (!includePassword) {
-    user[0].password = 0;
+  try {
+    let attributes = ["id", "email"]; // Default attributes to select
+    if (includePassword) {
+      attributes.push("password"); // Include password if required
+    }
+
+    const user = await UserSchema.findOne({
+      where: {
+        email: userEmail,
+      },
+      attributes: attributes, // Specify attributes to retrieve
+    });
+
+    return user ? user.toJSON() : null; // Return user object or null
+  } catch (error) {
+    console.error("Error in getUserByEmail:", error);
+    throw error; // Throw error for handling in the calling function
   }
-  return user[0];
 };
