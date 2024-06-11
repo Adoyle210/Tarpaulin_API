@@ -23,6 +23,11 @@ exports.User = User;
 exports.UserClientFields = ["name", "email", "password", "role"];
 UserClientFieldsWithoutPassword = ["id", "name", "email", "role"];
 
+// const Enrollment = sequelize.define("enrollment", {});
+
+// User.belongsToMany(Course, { through: Enrollment });
+// Course.belongsToMany(User, { through: Enrollment });
+
 exports.validateCredentials = async function (email, password) {
   // Find user by email
   const user = await User.findOne({ where: { email } });

@@ -22,8 +22,10 @@ exports.CourseClientField = [
   "instructorId",
 ];
 
-Course.belongsToMany(User, { through: "enrollment" });
-User.belongsToMany(Course, { through: "enrollment" });
+// const Enrollment = sequelize.define("enrollment", {});
+
+// Course.belongsToMany(User, { through: Enrollment });
+// User.belongsToMany(Course, { through: Enrollment });
 
 exports.insertNewCourse = async function (course) {
   const result = await Course.create(course, exports.CourseClientField);
