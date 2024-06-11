@@ -4,7 +4,7 @@ const { ValidationError } = require('sequelize')
 //adding models 
 const { Assignment, AssignmentClientFields, getAssignmentById } = require('../models/assignment')
 const { UserSchema, getUserById } = require('../models/user')
-const { Course, getCourseById, insertNewCourse } = require('../models/course')
+const { Course, getCourseById, insertNewCourse, getEnrolledStudents, enrollStudents, unenrollStudents } = require('../models/course')
 
 //adding auth 
 const { generateAuthToken, requireAuthentication } = require('../lib/auth')
@@ -42,7 +42,7 @@ router.get('/:id', async function (req, res, next) {
 router.post('/', requireAuthentication, async function (req, res, next) { 
     const usr = await getUserById(req.user)
 
-    if (usr.role == "admin") {
+    if (usr || usr.role == "admin") {
         try {
         const courseid = await insertNewCourse(req.body)
         res.status(201).send({ id: courseid })
@@ -66,73 +66,65 @@ router.post('/', requireAuthentication, async function (req, res, next) {
 //GET //courses/:id/students
 // Returns a list containing the User IDs of all students currently enrolled in the Course.  Only an authenticated User with 'admin' role or an authenticated 
 //'instructor' User whose ID matches the instructorId of the Course can fetch the list of enrolled students.
+
 router.get('/:id/students', requireAuthentication, async function (req, res, next) {
   const courseId = req.params.id;
-  const user = await getUserById(req.user);
+  const userId = req.user;
 
   try {
-    const course = await getCourseById(courseId);
-
-    if (course) {
-      if (user.role === 'admin' || user.id === course.instructorId) {
-        const students = await course.getUsers({ where: { role: 'student' } }); 
-        const studentIds = students.map(student => student.id);
-        res.status(200).send({ studentIds });
-      } else {
-        res.status(403).send({ error: 'Permission denied' });
+      const course = await getCourseById(courseId);
+      if (!course) {
+          return res.status(404).send({ err: "Course does not exist" });
       }
-    } else {
-      res.status(404).send({ error: 'Course not found' });
-    }
+
+      const user = await getUserById(userId, false);
+      if (user.role !== 'admin' && user.id !== course.instructorId) {
+          return res.status(403).send({ err: "You do not have permissions to perform this action" });
+      }
+
+      const students = await getEnrolledStudents(courseId);
+      res.status(200).send({ students });
   } catch (e) {
-    res.status(500).send({ error: 'Server error' });
+      res.status(500).send({ error: "Internal server error" });
   }
 });
-
 
 
 
 //POST //courses/:id/students
 // Enrolls and/or unenrolls students from a Course.  Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the 
 //instructorId of the Course can update the students enrolled in the Course.
+
 router.post('/:id/students', requireAuthentication, async function (req, res, next) {
   const courseId = req.params.id;
-  const user = await getUserById(req.user);
+  const userId = req.user;
+  const { add, remove } = req.body; // Expecting arrays of student IDs to add and remove
 
   try {
-    const course = await getCourseById(courseId);
-
-    if (course) {
-      if (user.role === 'admin' || user.id === course.instructorId) {
-        const { enroll, unenroll } = req.body.id; 
-
-        if (enroll) {
-          for (const studentId of enroll) {
-            const student = await UserSchema.findByPk(studentId);
-            if (student && student.role === 'student') {
-              await course.addStudent(student);
-            }
-          }
-        }
-
-        if (unenroll) {
-          for (const studentId of unenroll) {
-            const student = await UserSchema.findByPk(studentId);
-            if (student) {
-              await course.removeStudent(student);
-            }
-          }
-        }
-
-        res.status(200).send({ message: 'Enrollment updated successfully' });
-      } else {
-        res.status(403).send({ error: 'Permission denied' });
+      const course = await getCourseById(courseId);
+      if (!course) {
+          return res.status(404).send({ err: "Course does not exist" });
       }
-    } else {
-      res.status(404).send({ error: 'Course not found' });
-    }
+
+      const user = await getUserById(userId, false);
+      if (!user) {
+          return res.status(404).send({ err: "User does not exist" });
+      }
+      if (user.role !== 'admin' && user.id !== course.instructorId) {
+          return res.status(403).send({ err: "You do not have permissions to perform this action" });
+      }
+
+      if (add && add.length > 0) {
+          await enrollStudents(courseId, add);
+      }
+      if (remove && remove.length > 0) {
+          await unenrollStudents(courseId, remove);
+      }
+
+      const updatedStudents = await getEnrolledStudents(courseId);
+      res.status(200).send({ students: updatedStudents });
   } catch (e) {
-    res.status(500).send({ error: 'Server error' });
+      res.status(500).send({ error: "Internal server error" });
   }
 });
 
@@ -142,36 +134,7 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
 // GET //courses/:id/roster
 // Returns a CSV file containing information about all of the students currently enrolled in the Course, including names, IDs, and email addresses.  
 // Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the Course can fetch the course roster.
-router.get('/:id/roster', requireAuthentication, async function (req, res, next) {
-  const courseId = req.params.id;
-  const user = await getUserById(req.user);
 
-  try {
-    const course = await getCourseById(courseId);
-
-    if (course) {
-      if (user.role === 'admin' || user.id === course.instructorId) {
-        const students = await course.getStudents({ where: { role: 'student' } });
-        const studentData = students.map(student => ({
-          id: student.userID,
-          email: student.email,
-        }));
-
-        const csv = parse(studentData); // Convert JSON to CSV
-
-        res.header('Content-Type', 'text/csv');
-        res.attachment(`course_${courseId}_roster.csv`);
-        res.status(200).send(csv);
-      } else {
-        res.status(403).send({ error: 'Permission denied' });
-      }
-    } else {
-      res.status(404).send({ error: 'Course not found' });
-    }
-  } catch (e) {
-    res.status(500).send({ error: 'Server error' });
-  }
-});
 
 
 
