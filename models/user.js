@@ -20,6 +20,7 @@ const UserSchema = sequelize.define("user", {
 
 exports.UserSchema = UserSchema;
 exports.UserClientFields = ["name", "email", "password", "role"];
+UserClientFieldsWithoutPassword = ["name", "email", "role"];
 
 exports.validateCredentials = async function (email, password) {
   // Find user by email
@@ -49,7 +50,7 @@ exports.getUserById = async function (id, includePassword) {
 
 exports.getUserByEmail = async function (userEmail, includePassword) {
   try {
-    let attributes = ["id", "email"]; // Default attributes to select
+    let attributes = UserClientFieldsWithoutPassword; // Default attributes to select
     if (includePassword) {
       attributes.push("password"); // Include password if required
     }
