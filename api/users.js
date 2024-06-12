@@ -42,6 +42,7 @@ const router = Router();
     // console.log("the hash!::: ", hash);
     //
     const user = await User.create(
+
       { ...req.body, password: hash },
       UserClientFields
     );

@@ -36,4 +36,3 @@ exports.getCourseById = async function (id) {
   const course = await Course.findByPk(id);
   return course;
 };
-
