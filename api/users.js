@@ -14,10 +14,12 @@ const {
   insertNewSubmission,
 } = require("../models/submission"); // or this
 const {
-  UserSchema,
+  User,
   getUserById,
   validateCredentials,
   UserClientFields,
+  getUserByEmail,
+  getUserRecord,
 } = require("../models/user");
 const { Course, getCourseById } = require("../models/course"); // or this
 
@@ -33,13 +35,34 @@ const router = Router();
 //POST //users
 // Create and store a new application User with specified data and adds it to the application's database.
 // Only an authenticated User with 'admin' role can create users with the 'admin' or 'instructor' roles.
-router.post("/", postUserVerification, async function (req, res, next) {
+/*router.post("/", postUserVerification, async function (req, res, next) {
   try {
     // deal with password hashing here
     const hash = await bcrypt.hash(req.body.password, 8);
     // console.log("the hash!::: ", hash);
     //
-    const user = await UserSchema.create(
+    const user = await User.create(
+      { ...req.body, password: hash },
+      UserClientFields
+    );
+    res.status(201).send({ id: user.id });
+  } catch (e) {
+    if (e instanceof ValidationError) {
+      res.status(400).send({ error: e.message });
+    } else {
+      next(e);
+    }
+  }
+});*/
+
+
+router.post("/", async function (req, res, next) {
+  try {
+    // deal with password hashing here
+    const hash = await bcrypt.hash(req.body.password, 8);
+    // console.log("the hash!::: ", hash);
+    //
+    const user = await User.create(
       { ...req.body, password: hash },
       UserClientFields
     );
@@ -75,34 +98,36 @@ router.post("/login", async function (req, res, next) {
 });
 
 //GET //users/:id
-// Returns information about the specified User.  If the User has the 'instructor' role, the response should include a list of the IDs of the
-//Courses the User teaches (i.e. Courses whose instructorId field matches the ID of this User).  If the User has the 'student' role, the response
-//should include a list of the IDs of the Courses the User is enrolled in.  Only an authenticated User whose ID matches the ID of the requested User
-//can fetch this information.
-router.get("/:userId", requireAuthentication, async function (req, res, next) {
-  // get user based on userid, then check admin for authorization check
-  const user = await getUserById(req.user);
-  if (!user.admin) {
-    if (req.user != req.params.userId) {
-      res.status(403).send({
-        error: "Not Authorized to Access",
-      });
-    }
-  }
-  const userId = req.params.userId;
+// Returns information about the specified User.
+// If the User has the 'instructor' role, the response should include a list of the IDs of the Courses the User teaches (i.e. Courses whose instructorId field matches the ID of this User).
+// If the User has the 'student' role, the response should include a list of the IDs of the Courses the User is enrolled in.
+// Only an authenticated User whose ID matches the ID of the requested User can fetch this information.
+
+router.get('/:userId', requireAuthentication, async function (req, res, next) {
   try {
-    const user = await UserSchema.findByPk(userId, {
-      // exclude field named password
-      attributes: { exclude: ["password"] },
-    });
-    if (user) {
-      res.status(200).send(user);
+    const requestedUser = await getUserById(req.params.userId);
+    const loggedInUser = await getUserByEmail(req.userEmail); // Use req.userEmail
+
+    if (requestedUser) {
+      if (loggedInUser.email === requestedUser.email) {
+        const user = await getUserRecord(requestedUser);
+        res.status(200).send(user);
+      } else {
+        res.status(403).send({
+          error: 'Invalid credentials for the requested information',
+        });
+      }
     } else {
-      next();
+      // User does not exist
+      res.status(404).send({ error: 'User not found' });
     }
   } catch (e) {
-    next(e);
+    console.error('Error fetching user:', e);
+    res.status(500).send({ error: 'Server error' });
   }
 });
+
+module.exports = router;
+
 
 module.exports = router;
