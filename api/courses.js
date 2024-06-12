@@ -167,7 +167,7 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
               );
             }
           }
-
+        }
         if (unenroll) {
           for (const studentId of unenroll) {
             await sequelize.query(

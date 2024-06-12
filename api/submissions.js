@@ -11,9 +11,11 @@ const {
   Submission,
   SubmissionClientField,
   insertNewSubmission,
+  getSubmissionById
 } = require("../models/submission");
-const { User, getUserById } = require("../models/user");
 const { Course, getCourseById } = require("../models/course");
+
+const { User, getUserById, getUserByEmail } = require("../models/user");
 
 //adding auth
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
@@ -25,14 +27,31 @@ const router = Router();
 //role or an authenticated 'instructor' User whose ID matches the instructorId of the associated course can update a Submission.
 router.patch("/:id", requireAuthentication, async function (req, res, next) {
   const submissionId = req.params.submissionId;
-  const result = await Submission.update(req.body, {
-    where: { id: submissionId },
-    fields: SubmissionClientField,
-  });
-  if (result[0] > 0) {
-    res.status(204).send();
+
+  const usr = await getUserByEmail(req.userEmail);
+  console.log('User details from getUserByEmail:', usr); // Log the user details
+
+  const sub = await getSubmissionById(submissionId);
+
+  const assign = await getAssignmentById(sub.assignmentId);
+
+  const course = await getCourseById(assign.courseId);
+
+  if (usr && (usr.role === 'admin' || usr.id === course.instuctorId)) {
+
+    const result = await Submission.update(req.body, {
+      where: { id: submissionId },
+      fields: SubmissionClientField,
+    });
+
+    if (result[0] > 0) {
+      res.status(204).send();
+    } else {
+      next();
+    }
   } else {
-    next();
+    console.log('User is not an admin or the instructor of the course associated with this submission!:', usr);
+    res.status(403).send({ err: 'You do not have permissions to perform this action' });
   }
 });
 

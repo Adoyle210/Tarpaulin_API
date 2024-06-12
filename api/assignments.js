@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const { ValidationError } = require("sequelize");
+const multer = require('multer')
 
 //adding models
 const {
@@ -19,6 +20,20 @@ const { Course, getCourseById } = require("../models/course");
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.diskStorage({
+      destination: `${__dirname}/submissions`,
+      filename: (req, file, callback) => {
+          const filename = crypto.pseudoRandomBytes(16).toString("hex")
+          const extension = imageTypes[file.mimetype]
+          callback(null, `${filename}.${extension}`) 
+      }
+  }), 
+  // fileFilter: (req, file, callback) => {
+  //     callback(null, !!imageTypes[file.mimetype])
+  // }
+})
 
 //GET
 router.get("/", async function (req, res) {
@@ -89,6 +104,7 @@ router.get(
 //Only an authenticated User with 'student' role who is enrolled in the Course corresponding to the Assignment's courseId can create a Submission.
 router.post(
   "/:id/submissions",
+  upload.single("submission"),
   requireAuthentication,
   async function (req, res, next) {
     const getUser = await getUserById(req.user);
@@ -96,8 +112,30 @@ router.post(
 
     const result = await Course.findOne({
       where: { id: getAssignment.courseId },
-      include: User,
+      include: User
     });
+
+    if(req.file){
+  
+      if(getUser && getUser.role == "student"){
+
+        const id = await insertNewSubmission({
+          assignmentId: getAssignment.id,
+          courseId: getAssignment.courseId,
+          filename: req.file.filename,
+          path: req.file.path,
+          contentType: req.file.mimetype
+      })
+  
+      res.status(204).send({id: id})
+  
+      }
+    }else{
+      console.error("== ERROR:", err)
+      res.status(500).send({
+          err: "Server error. Please try again later."
+      })
+  }
 
     // NEEDS TO BE COMPLETED
   }
