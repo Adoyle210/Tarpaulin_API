@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const { ValidationError } = require("sequelize");
+const multer = require('multer')
 
 //adding models
 const {
@@ -19,6 +20,20 @@ const { Course, getCourseById } = require("../models/course");
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.diskStorage({
+      destination: `${__dirname}/submissions`,
+      filename: (req, file, callback) => {
+          const filename = crypto.pseudoRandomBytes(16).toString("hex")
+          const extension = imageTypes[file.mimetype]
+          callback(null, `${filename}.${extension}`) 
+      }
+  }), 
+  // fileFilter: (req, file, callback) => {
+  //     callback(null, !!imageTypes[file.mimetype])
+  // }
+})
 
 //GET
 router.get("/", async function (req, res) {
@@ -174,6 +189,7 @@ router.get(
 //POST //assignments/:id/submissions
 // Create and store a new Assignment with specified data and adds it to the application's database.
 //Only an authenticated User with 'student' role who is enrolled in the Course corresponding to the Assignment's courseId can create a Submission.
+
 router.post('/:id/submissions', requireAuthentication, async function (req,res,next){
   const getUser = await getUserById(req.user)
   const getAssignment = await(getAssignmentById(req.params.id))

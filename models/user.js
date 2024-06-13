@@ -16,7 +16,7 @@ const User = sequelize.define("user", {
     validate: {
       isIn: [["student", "admin", "instructor"]],
     },
-  },
+  }, 
 });
 
 exports.User = User;

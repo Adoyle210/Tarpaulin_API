@@ -26,3 +26,8 @@ exports.insertNewSubmission = async function (submission) {
   const result = await Submission.create(submission, exports.SubmissionClientField)
   return result.id
 }
+
+exports.getSubmissionById = async function (id) {
+  const sub = await Submission.findByPk(id);
+  return sub;
+};
