@@ -13,13 +13,17 @@ const {
   SubmissionClientField,
   insertNewSubmission,
 } = require("../models/submission");
-const { User, getUserById } = require("../models/user");
+const { User, getUserById, getUserByEmail } = require("../models/user");
 const { Course, getCourseById } = require("../models/course");
 
 //adding auth
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
 
 const router = Router();
+
+const imageTypes = {
+  "application/pdf": "pdf"
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -34,6 +38,8 @@ const upload = multer({
   //     callback(null, !!imageTypes[file.mimetype])
   // }
 })
+
+const crypto = require('node:crypto')
 
 //GET
 router.get("/", async function (req, res) {
@@ -75,7 +81,7 @@ router.get("/", async function (req, res) {
 router.post("/", requireAuthentication, async function (req, res, next) {
   try {
     const { courseId, title, points, due } = req.body;
-    const userEmail = req.user;
+    const userEmail = req.userEmail;
     const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
 
     let getUser = null; // Initialize getUser as null
@@ -90,7 +96,7 @@ router.post("/", requireAuthentication, async function (req, res, next) {
     }
 
     // Check if req.user.id is defined
-    if (!req.user || !getUser || !getUser.id) {
+    if (!req.userEmail || !getUser || !getUser.id) {
       return res.status(401).send({ error: 'Unauthorized no user or id' });
     }
 
@@ -129,7 +135,7 @@ router.get(
   '/:id/submissions', 
   requireAuthentication, 
   async function (req, res, next) {
-  const userEmail = req.user;
+  const userEmail = req.userEmail;
   const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
 
   let getUser = null; // Initialize getUser as null
@@ -144,43 +150,59 @@ router.get(
   }
 
   // Check if req.user.id is defined
-  if (!req.user || !getUser || !getUser.id) {
+  if (!req.userEmail || !getUser || !getUser.id) {
     return res.status(401).send({ error: 'Unauthorized no user or id' });
   }
 
+  const assign = await getAssignmentById(req.params.id);
+
   if(getUser.role == "instructor" || getUser.role == "admin") {
-      let page = parseInt(req.query.page) || 1
-      page = page < 1 ? 1 : page
-      const numPerPage = 10
-      const offset = (page - 1) * numPerPage
 
-      const result = await Submission.findAndCountAll({
-          where: {assignmentId: req.params.id},
-          limit: numPerPage,
-          offset: offset
-      })
+    // Check if the course exists
+    const course = await Course.findOne({ where: { id: assign.courseId }, attributes: ['instructorId'] });
+    if (!course) {
+      return res.status(404).send({ error: 'Course not found' });
+    }
+    console.log(getUser.id);
+    console.log(course.instructorId);
+      if ((getUser.id === course.instructorId) || getUser.role === "admin"){
 
-      const lastPage = Math.ceil(result.count / numPerPage)
-      const links = {}
-      if (page < lastPage) {
-          links.nextPage = `/businesses?page=${page + 1}`
-          links.lastPage = `/businesses?page=${lastPage}`
-      }
-      if (page > 1) {
-          links.prevPage = `/businesses?page=${page - 1}`
-          links.firstPage = '/businesses?page=1'
-      }
 
-      res.status(200).json({
-          submission: result.rows,
-          pageNumber: page,
-          totalPages: lastPage,
-          pageSize: numPerPage,
-          totalCount: result.count,
-          links: links
-      })
-  } else {
-      res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" })
+        let page = parseInt(req.query.page) || 1
+        page = page < 1 ? 1 : page
+        const numPerPage = 10
+        const offset = (page - 1) * numPerPage
+
+        const result = await Submission.findAndCountAll({
+            where: {assignmentId: req.params.id},
+            limit: numPerPage,
+            offset: offset
+        })
+
+        const lastPage = Math.ceil(result.count / numPerPage)
+        const links = {}
+        if (page < lastPage) {
+            links.nextPage = `/businesses?page=${page + 1}`
+            links.lastPage = `/businesses?page=${lastPage}`
+        }
+        if (page > 1) {
+            links.prevPage = `/businesses?page=${page - 1}`
+            links.firstPage = '/businesses?page=1'
+        }
+
+        res.status(200).json({
+            submissions: result.rows,
+            pageNumber: page,
+            totalPages: lastPage,
+            pageSize: numPerPage,
+            totalCount: result.count,
+            links: links
+        })
+    } else {
+        res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" })
+    }
+  }else{
+    res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" })
   }
 })
 
@@ -190,8 +212,8 @@ router.get(
 // Create and store a new Assignment with specified data and adds it to the application's database.
 //Only an authenticated User with 'student' role who is enrolled in the Course corresponding to the Assignment's courseId can create a Submission.
 
-router.post('/:id/submissions', requireAuthentication, async function (req,res,next){
-  const getUser = await getUserById(req.user)
+router.post('/:id/submissions', requireAuthentication, upload.single("submission"), async function (req,res,next){
+  const getUser = await getUserByEmail(req.userEmail)
   const getAssignment = await(getAssignmentById(req.params.id))
   
   const result = await Course.findOne({
@@ -206,14 +228,23 @@ router.post('/:id/submissions', requireAuthentication, async function (req,res,n
   for(let i = 0; i < enrolled.length; i++){
       if(enrolled[i].dataValues.id === getUser.id){
           authenticated = true
-      }
-      
+      }  
   }
+
   if(authenticated == false) {
       res.status(403).send({error: "Only an authenticated student who is enrolled in this course can post a submission"})
   } else {
       try {
-          const submission = await Submission.create(req.body, SubmissionClientField)
+          const submission = await Submission.create({
+            assignmentID: req.params.id,
+            studentID: getUser.id,
+            timestamp: Date.now(),
+            grade: 0,
+            file: req.file.filename,
+            filename: req.file.filename,
+            path: req.file.path,
+            contentType: req.file.mimetype
+          }, SubmissionClientField)
           res.status(201).send({ id: submission.id })
       } catch (e) {
           if (e instanceof ValidationError) {
@@ -242,11 +273,13 @@ router.get("/:id", requireAuthentication, async function (req, res, next) {
 //Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the
 //Course corresponding to the Assignment's courseId can update an Assignment.
 router.patch("/:id", requireAuthentication, async function (req, res, next) {
-  const userEmail = req.user;
+  const userEmail = req.userEmail;
   const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
-  const { courseId, title, points, due } = req.body;
 
   let getUser = null; // Initialize getUser as null
+
+  const getAssignment = await(getAssignmentById(req.params.id))
+  
 
   if (dbUser) {
     console.log('dbUser:', dbUser.dataValues);
@@ -258,11 +291,11 @@ router.patch("/:id", requireAuthentication, async function (req, res, next) {
   }
 
   // Check if req.user.id is defined
-  if (!req.user || !getUser || !getUser.id) {
+  if (!req.userEmail || !getUser || !getUser.id) {
     return res.status(401).send({ error: 'Unauthorized no user or id' });
   }
   if(getUser.role == "instructor" || getUser.role == "admin") {
-    const course = await Course.findOne({ where: { id: courseId }, attributes: ['instructorId'] });
+    const course = await Course.findOne({ where: { id: getAssignment.courseId }, attributes: ['instructorId'] });
     if (!course) {
       return res.status(404).send({ error: 'Course not found' });
     }
@@ -275,7 +308,8 @@ router.patch("/:id", requireAuthentication, async function (req, res, next) {
         fields: AssignmentClientFields,
       });
       if (result[0] > 0) {
-        res.status(204).send();
+        const assignment = await Assignment.findByPk(assignmentId, {});
+        res.status(200).send({ message: 'Assignment updated successfully', assignment});
       } else {
         next();
       }
@@ -292,7 +326,7 @@ router.patch("/:id", requireAuthentication, async function (req, res, next) {
 //User whose ID matches the instructorId of the Course corresponding to the Assignment's courseId can delete an Assignment.
 router.delete("/:id", requireAuthentication, async function (req, res, next) {
   try {
-    const userEmail = req.user;
+    const userEmail = req.userEmail;
     const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
 
     let getUser = null; // Initialize getUser as null
@@ -307,7 +341,7 @@ router.delete("/:id", requireAuthentication, async function (req, res, next) {
     }
 
     // Check if req.user.id is defined
-    if (!req.user || !getUser || !getUser.id) {
+    if (!req.userEmail || !getUser || !getUser.id) {
       return res.status(401).send({ error: 'Unauthorized no user or id' });
     }
 
@@ -336,7 +370,7 @@ router.delete("/:id", requireAuthentication, async function (req, res, next) {
         const result = await Assignment.destroy({ where: { id: assignmentId } });
 
         if (result > 0) {
-          res.status(204).send();
+          res.status(204).send({"message": "Course Successfully Deleted"});
         } else {
           next();
         }
