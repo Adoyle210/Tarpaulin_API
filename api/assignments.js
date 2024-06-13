@@ -87,7 +87,7 @@ router.post("/", requireAuthentication, async function (req, res, next) {
       }
       console.log(getUser.id);
       console.log(course.instructorId);
-      if (getUser.id === course.instructorId){
+      if (getUser.id === course.instructorId || getUser.role === "admin"){
         const assignment = await Assignment.create(req.body, AssignmentClientFields);
         res.status(201).send({ id: assignment.id });
       }else {
@@ -228,6 +228,7 @@ router.get("/:id", requireAuthentication, async function (req, res, next) {
 router.patch("/:id", requireAuthentication, async function (req, res, next) {
   const userEmail = req.user;
   const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+  const { courseId, title, points, due } = req.body;
 
   let getUser = null; // Initialize getUser as null
 
@@ -245,15 +246,25 @@ router.patch("/:id", requireAuthentication, async function (req, res, next) {
     return res.status(401).send({ error: 'Unauthorized no user or id' });
   }
   if(getUser.role == "instructor" || getUser.role == "admin") {
-    const assignmentId = req.params.id;
-    const result = await Assignment.update(req.body, {
-      where: { id: assignmentId },
-      fields: AssignmentClientFields,
-    });
-    if (result[0] > 0) {
-      res.status(204).send();
-    } else {
-      next();
+    const course = await Course.findOne({ where: { id: courseId }, attributes: ['instructorId'] });
+    if (!course) {
+      return res.status(404).send({ error: 'Course not found' });
+    }
+    console.log(getUser.id);
+    console.log(course.instructorId);
+    if (getUser.id === course.instructorId || getUser.role === "admin"){
+      const assignmentId = req.params.id;
+      const result = await Assignment.update(req.body, {
+        where: { id: assignmentId },
+        fields: AssignmentClientFields,
+      });
+      if (result[0] > 0) {
+        res.status(204).send();
+      } else {
+        next();
+      }
+    }else {
+      return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
     }
   }else {
     res.status(403).send({ error: "Only a user with the admin or instructor role can access thhis information" })
@@ -279,38 +290,46 @@ router.delete("/:id", requireAuthentication, async function (req, res, next) {
       console.log('User not found');
     }
 
-  // Check if req.user.id is defined
-  if (!req.user || !getUser || !getUser.id) {
-    return res.status(401).send({ error: 'Unauthorized no user or id' });
-  }
-  if(getUser.role == "instructor" || getUser.role == "admin") {
-    const assignmentId = req.params.id;
-
-    // Find the assignment by ID
-    const assignment = await Assignment.findByPk(assignmentId);
-
-    if (!assignment) {
-      return res.status(404).send({ error: "Assignment not found" });
+    // Check if req.user.id is defined
+    if (!req.user || !getUser || !getUser.id) {
+      return res.status(401).send({ error: 'Unauthorized no user or id' });
     }
 
-    // Find the course associated with the assignment
-    const course = await Course.findByPk(assignment.courseId);
+    if (getUser.role === "instructor" || getUser.role === "admin") {
+      const assignmentId = req.params.id;
 
-    if (!course) {
-      return res.status(404).send({ error: "Course not found" });
-    }
+      // Find the assignment by ID
+      const assignment = await Assignment.findByPk(assignmentId);
 
-    // Delete the assignment
-    const result = await Assignment.destroy({ where: { id: assignmentId } });
+      if (!assignment) {
+        return res.status(404).send({ error: "Assignment not found" });
+      }
 
-    if (result > 0) {
-      res.status(204).send();
+      // Find the course associated with the assignment
+      const course = await Course.findByPk(assignment.courseId, { attributes: ['instructorId'] });
+
+      if (!course) {
+        return res.status(404).send({ error: "Course not found" });
+      }
+
+      console.log(getUser.id);
+      console.log(course.instructorId);
+
+      if (getUser.id === course.instructorId || getUser.role === "admin") {
+        // Delete the assignment
+        const result = await Assignment.destroy({ where: { id: assignmentId } });
+
+        if (result > 0) {
+          res.status(204).send();
+        } else {
+          next();
+        }
+      } else {
+        return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
+      }
     } else {
-      next();
+      res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" });
     }
-  }else {
-    res.status(403).send({ error: "Only a user with the admin or instructor role can access thhis information" })
-  }
   } catch (e) {
     next(e);
   }
