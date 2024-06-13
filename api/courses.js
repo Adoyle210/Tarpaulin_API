@@ -8,6 +8,8 @@ const { Course, getCourseById, insertNewCourse } = require("../models/course");
 const { Enrollment } = require('../models/enrollment');
 const sequelize = require('../lib/sequelize');
 const { parse } = require('json2csv'); // Import json2csv
+const fs = require('fs');
+const path = require('path');
 
 //adding auth
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
