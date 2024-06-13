@@ -60,43 +60,42 @@ router.get("/", async function (req, res) {
 router.post("/", requireAuthentication, async function (req, res, next) {
   try {
     const { courseId, title, points, due } = req.body;
-    
-    // Log the value of req.user
-    console.log('req.user:', req.user);
-    console.log('req.user.id:', req.user.id);
+    const userEmail = req.user;
+    const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+
+    let getUser = null; // Initialize getUser as null
+
+    if (dbUser) {
+      console.log('dbUser:', dbUser.dataValues);
+      getUser = dbUser.dataValues; // Assign dbUser.dataValues to getUser
+      console.log('getUser.id:', getUser.id);
+      console.log('getUser.role:', getUser.role);
+    } else {
+      console.log('User not found');
+    }
 
     // Check if req.user.id is defined
-    if (!req.user || !req.user.id) {
+    if (!req.user || !getUser || !getUser.id) {
       return res.status(401).send({ error: 'Unauthorized no user or id' });
     }
 
-    const getUser = await User.findByPk(req.user.id);
-
-    // Log the value of getUser
-    console.log('getUser:', getUser);
-
-    // Check if getUser is not null
-    if (!getUser) {
-      return res.status(401).send({ error: 'Unauthorized' });
-    }
-
     if (getUser.role === "instructor" || getUser.role === "admin") {
-      console.log("hahah");
-    }
+      // Check if the course exists
+      const course = await Course.findOne({ where: { id: courseId } });
+      if (!course) {
+        return res.status(404).send({ error: 'Course not found' });
+      }
 
-    // Check if the course exists
-    const course = await Course.findOne({ where: { id: courseId } });
-    if (!course) {
-      return res.status(404).send({ error: 'Course not found' });
+      const assignment = await Assignment.create(req.body, AssignmentClientFields);
+      res.status(201).send({ id: assignment.id });
+    } else {
+      return res.status(401).send({ error: 'Unauthorized for students and teachers without matching id' });
     }
-  
-    const assignment = await Assignment.create(req.body, AssignmentClientFields)
-    res.status(201).send({ id: assignment.id })
   } catch (e) {
     if (e instanceof ValidationError) {
-    res.status(400).send({ error: e.message })
+      res.status(400).send({ error: e.message });
     } else {
-    throw e
+      throw e;
     }
   }
 });
