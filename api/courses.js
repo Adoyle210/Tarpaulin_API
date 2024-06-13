@@ -279,8 +279,6 @@ router.get('/downloads/:filename', function (req, res) {
       console.error('Error downloading file:', err);
       return res.status(500).send({ error: 'Error downloading file' });
     }
-    // Optionally, delete the file after download
-    // fs.unlinkSync(filePath);
   });
 });
 
