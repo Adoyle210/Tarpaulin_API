@@ -4,6 +4,7 @@ const sequelize = require("../lib/sequelize");
 const bcrypt = require("bcryptjs");
 const { extractValidFields } = require("../lib/validation");
 const { Course } = require("./course");
+const Enrollment = require("./enrollment");
 
 const User = sequelize.define("user", {
   name: { type: DataTypes.STRING, allowNull: false },
@@ -16,7 +17,7 @@ const User = sequelize.define("user", {
     validate: {
       isIn: [["student", "admin", "instructor"]],
     },
-  }, 
+  },
 });
 
 exports.User = User;
@@ -97,8 +98,14 @@ exports.getUserRecord = async function (user) {
   };
   if (user.role === "student") {
     // include courses student is enrolled in
-    // TODO: once enrollment is setup
-    return user;
+    const enrollment = await Enrollment.findAll({
+      where: {
+        userId: user.id,
+      },
+      attributes: ["courseId"],
+    });
+    response.courses = enrollment;
+    return response;
   } else if (user.role === "instructor") {
     // courses where instructor id matches the user id of the user
     const courses = await Course.findAll({
@@ -111,6 +118,6 @@ exports.getUserRecord = async function (user) {
     return response;
   } else {
     // return admin user unchanged
-    return response;
+    return user;
   }
 };
