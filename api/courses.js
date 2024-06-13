@@ -8,6 +8,8 @@ const { Course, getCourseById, insertNewCourse } = require("../models/course");
 const { Enrollment } = require('../models/enrollment');
 const sequelize = require('../lib/sequelize');
 const { parse } = require('json2csv'); // Import json2csv
+const fs = require('fs');
+const path = require('path');
 
 //adding auth
 const { generateAuthToken, requireAuthentication } = require("../lib/auth");
@@ -64,6 +66,7 @@ router.post('/', requireAuthentication, async function (req, res, next) {
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
 
 //GET //courses/:id/students
 // Returns a list containing the User IDs of all students currently enrolled in the Course.  Only an authenticated User with 'admin' role or an authenticated
@@ -167,6 +170,7 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
               );
             }
           }
+        }
 
         if (unenroll) {
           for (const studentId of unenroll) {
@@ -178,11 +182,9 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
               }
             );
           }
-
-          res.status(200).send({ message: "Enrollment updated successfully" });
-        } else {
-          res.status(403).send({ error: "Permission denied" });
         }
+
+        res.status(200).send({ message: 'Enrollment updated successfully' });
       } else {
         res.status(404).send({ error: 'Course not found' });
       }
@@ -196,9 +198,16 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
 });
 
 
+
 // GET //courses/:id/roster
 // Returns a CSV file containing information about all of the students currently enrolled in the Course, including names, IDs, and email addresses.
 // Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the Course can fetch the course roster.
+
+const downloadsDir = path.join(__dirname, 'downloads');
+if (!fs.existsSync(downloadsDir)) {
+  fs.mkdirSync(downloadsDir);
+}
+
 router.get('/:id/roster', requireAuthentication, async function (req, res, next) {
   const courseId = req.params.id;
 
@@ -242,20 +251,39 @@ router.get('/:id/roster', requireAuthentication, async function (req, res, next)
 
         const csv = parse(studentData); // Convert JSON to CSV
 
-        res.header("Content-Type", "text/csv");
-        res.attachment(`course_${courseId}_roster.csv`);
-        res.status(200).send(csv);
+        const filePath = path.join(downloadsDir, `course_${courseId}_roster.csv`);
+        fs.writeFileSync(filePath, csv);
+
+        return res.status(200).send({
+          message: 'CSV file created successfully',
+          downloadLink: `/courses/downloads/course_${courseId}_roster.csv`
+        });
       } else {
-        res.status(404).send({ error: 'Course not found' });
+        return res.status(404).send({ error: 'Course not found' });
       }
     } else {
-      res.status(403).send({ error: 'Permission denied' });
+      return res.status(403).send({ error: 'Permission denied' });
     }
   } catch (e) {
     console.error('Error fetching roster:', e);
-    res.status(500).send({ error: 'Server error' });
+    return res.status(500).send({ error: 'Server error' });
   }
 });
+
+// Route to handle file download
+router.get('/downloads/:filename', function (req, res) {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadsDir, filename);
+  res.download(filePath, (err) => {
+    if (err) {
+      console.error('Error downloading file:', err);
+      return res.status(500).send({ error: 'Error downloading file' });
+    }
+    // Optionally, delete the file after download
+    // fs.unlinkSync(filePath);
+  });
+});
+
 
 // GET //courses/:id/assignments
 // Returns a list containing the Assignment IDs of all Assignments for the Course.
@@ -425,6 +453,7 @@ router.delete('/:id', requireAuthentication, async function (req, res, next) {
 //GET //courses?page=1&subject=<string>&number=<string>&term=<string>
 //Returns the list of all Courses.  This list should be paginated.
 //The Courses returned should not contain the list of students in the Course or the list of Assignments for the Course.
+
 router.get('/', requireAuthentication, async function (req, res, next) {
   const { page = 1, subject, number, term } = req.query;
   const limit = 10; // Number of courses per page
@@ -457,4 +486,6 @@ router.get('/', requireAuthentication, async function (req, res, next) {
   }
 });
 
+
 module.exports = router;
+
