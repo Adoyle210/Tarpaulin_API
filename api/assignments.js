@@ -72,14 +72,46 @@ router.get("/", async function (req, res) {
 //Create and store a new Assignment with specified data and adds it to the application's database.
 //Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId
 //of the Course corresponding to the Assignment's courseId can create an Assignment.
-
 router.post("/", requireAuthentication, async function (req, res, next) {
   try {
-    const assignment = await Assignment.create(
-      req.body,
-      AssignmentClientFields
-    );
-    res.status(201).send({ id: assignment.id });
+    const { courseId, title, points, due } = req.body;
+    const userEmail = req.user;
+    const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+
+    let getUser = null; // Initialize getUser as null
+
+    if (dbUser) {
+      console.log('dbUser:', dbUser.dataValues);
+      getUser = dbUser.dataValues; // Assign dbUser.dataValues to getUser
+      console.log('getUser.id:', getUser.id);
+      console.log('getUser.role:', getUser.role);
+    } else {
+      console.log('User not found');
+    }
+
+    // Check if req.user.id is defined
+    if (!req.user || !getUser || !getUser.id) {
+      return res.status(401).send({ error: 'Unauthorized no user or id' });
+    }
+
+    if (getUser.role === "instructor" || getUser.role === "admin") {
+      // Check if the course exists
+      const course = await Course.findOne({ where: { id: courseId }, attributes: ['instructorId'] });
+      if (!course) {
+        return res.status(404).send({ error: 'Course not found' });
+      }
+      console.log(getUser.id);
+      console.log(course.instructorId);
+      if (getUser.id === course.instructorId || getUser.role === "admin"){
+        const assignment = await Assignment.create(req.body, AssignmentClientFields);
+        res.status(201).send({ id: assignment.id });
+      }else {
+        return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
+      }
+
+    } else {
+      return res.status(401).send({ error: 'Unauthorized for students' });
+    }
   } catch (e) {
     if (e instanceof ValidationError) {
       res.status(400).send({ error: e.message });
@@ -94,62 +126,114 @@ router.post("/", requireAuthentication, async function (req, res, next) {
 //Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the Course
 //corresponding to the Assignment's courseId can fetch the Submissions for an Assignment.
 router.get(
-  "/:id/submissons",
-  requireAuthentication,
-  async function (req, res, next) {}
-);
+  '/:id/submissions', 
+  requireAuthentication, 
+  async function (req, res, next) {
+  const userEmail = req.user;
+  const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+
+  let getUser = null; // Initialize getUser as null
+
+  if (dbUser) {
+    console.log('dbUser:', dbUser.dataValues);
+    getUser = dbUser.dataValues; // Assign dbUser.dataValues to getUser
+    console.log('getUser.id:', getUser.id);
+    console.log('getUser.role:', getUser.role);
+  } else {
+    console.log('User not found');
+  }
+
+  // Check if req.user.id is defined
+  if (!req.user || !getUser || !getUser.id) {
+    return res.status(401).send({ error: 'Unauthorized no user or id' });
+  }
+
+  if(getUser.role == "instructor" || getUser.role == "admin") {
+      let page = parseInt(req.query.page) || 1
+      page = page < 1 ? 1 : page
+      const numPerPage = 10
+      const offset = (page - 1) * numPerPage
+
+      const result = await Submission.findAndCountAll({
+          where: {assignmentId: req.params.id},
+          limit: numPerPage,
+          offset: offset
+      })
+
+      const lastPage = Math.ceil(result.count / numPerPage)
+      const links = {}
+      if (page < lastPage) {
+          links.nextPage = `/businesses?page=${page + 1}`
+          links.lastPage = `/businesses?page=${lastPage}`
+      }
+      if (page > 1) {
+          links.prevPage = `/businesses?page=${page - 1}`
+          links.firstPage = '/businesses?page=1'
+      }
+
+      res.status(200).json({
+          submission: result.rows,
+          pageNumber: page,
+          totalPages: lastPage,
+          pageSize: numPerPage,
+          totalCount: result.count,
+          links: links
+      })
+  } else {
+      res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" })
+  }
+})
+
+    
 
 //POST //assignments/:id/submissions
 // Create and store a new Assignment with specified data and adds it to the application's database.
 //Only an authenticated User with 'student' role who is enrolled in the Course corresponding to the Assignment's courseId can create a Submission.
-router.post(
-  "/:id/submissions",
-  upload.single("submission"),
-  requireAuthentication,
-  async function (req, res, next) {
-    const getUser = await getUserById(req.user);
-    const getAssignment = await getAssignmentById(req.params.id);
 
-    const result = await Course.findOne({
-      where: { id: getAssignment.courseId },
+router.post('/:id/submissions', requireAuthentication, async function (req,res,next){
+  const getUser = await getUserById(req.user)
+  const getAssignment = await(getAssignmentById(req.params.id))
+  
+  const result = await Course.findOne({
+      where: { id: getAssignment.courseId},
       include: User
-    });
+  })
+  
+  const enrolled = result.users
+  enrolled.filter(enrolled => enrolled.user === getUser)
 
-    if(req.file){
-  
-      if(getUser && getUser.role == "student"){
-
-        const id = await insertNewSubmission({
-          assignmentId: getAssignment.id,
-          courseId: getAssignment.courseId,
-          filename: req.file.filename,
-          path: req.file.path,
-          contentType: req.file.mimetype
-      })
-  
-      res.status(204).send({id: id})
-  
+  let authenticated = false
+  for(let i = 0; i < enrolled.length; i++){
+      if(enrolled[i].dataValues.id === getUser.id){
+          authenticated = true
       }
-    }else{
-      console.error("== ERROR:", err)
-      res.status(500).send({
-          err: "Server error. Please try again later."
-      })
+      
   }
-
-    // NEEDS TO BE COMPLETED
+  if(authenticated == false) {
+      res.status(403).send({error: "Only an authenticated student who is enrolled in this course can post a submission"})
+  } else {
+      try {
+          const submission = await Submission.create(req.body, SubmissionClientField)
+          res.status(201).send({ id: submission.id })
+      } catch (e) {
+          if (e instanceof ValidationError) {
+              res.status(400).send({ error: e.message })
+          } else {
+              throw e
+          }
+      }
   }
-);
+})
 
 //GET //assignments/:id
 // Returns summary data about the Assignment, excluding the list of Submissions.
 router.get("/:id", requireAuthentication, async function (req, res, next) {
-  const assignmentId = req.params.assignmentId;
+  const assignmentId = req.params.id;
   const assignment = await Assignment.findByPk(assignmentId, {});
   if (assignment) {
     res.status(200).send(assignment);
   } else {
-    next();
+    res.status(404).send({ error: "the assigment does not exits" }) 
   }
 });
 
@@ -158,15 +242,48 @@ router.get("/:id", requireAuthentication, async function (req, res, next) {
 //Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the
 //Course corresponding to the Assignment's courseId can update an Assignment.
 router.patch("/:id", requireAuthentication, async function (req, res, next) {
-  const assignmentId = req.params.assignmentId;
-  const result = await Assignment.update(req.body, {
-    where: { id: assignmentId },
-    fields: AssignmentClientFields,
-  });
-  if (result[0] > 0) {
-    res.status(204).send();
+  const userEmail = req.user;
+  const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+  const { courseId, title, points, due } = req.body;
+
+  let getUser = null; // Initialize getUser as null
+
+  if (dbUser) {
+    console.log('dbUser:', dbUser.dataValues);
+    getUser = dbUser.dataValues; // Assign dbUser.dataValues to getUser
+    console.log('getUser.id:', getUser.id);
+    console.log('getUser.role:', getUser.role);
   } else {
-    next();
+    console.log('User not found');
+  }
+
+  // Check if req.user.id is defined
+  if (!req.user || !getUser || !getUser.id) {
+    return res.status(401).send({ error: 'Unauthorized no user or id' });
+  }
+  if(getUser.role == "instructor" || getUser.role == "admin") {
+    const course = await Course.findOne({ where: { id: courseId }, attributes: ['instructorId'] });
+    if (!course) {
+      return res.status(404).send({ error: 'Course not found' });
+    }
+    console.log(getUser.id);
+    console.log(course.instructorId);
+    if (getUser.id === course.instructorId || getUser.role === "admin"){
+      const assignmentId = req.params.id;
+      const result = await Assignment.update(req.body, {
+        where: { id: assignmentId },
+        fields: AssignmentClientFields,
+      });
+      if (result[0] > 0) {
+        res.status(204).send();
+      } else {
+        next();
+      }
+    }else {
+      return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
+    }
+  }else {
+    res.status(403).send({ error: "Only a user with the admin or instructor role can access thhis information" })
   }
 });
 
@@ -174,13 +291,65 @@ router.patch("/:id", requireAuthentication, async function (req, res, next) {
 // Completely removes the data for the specified Assignment, including all submissions.  Only an authenticated User with 'admin' role or an authenticated 'instructor'
 //User whose ID matches the instructorId of the Course corresponding to the Assignment's courseId can delete an Assignment.
 router.delete("/:id", requireAuthentication, async function (req, res, next) {
-  const assignmentId = req.params.assignmentId;
-  const result = await Assignment.destroy({ where: { id: assignmentId } });
-  if (result > 0) {
-    res.status(204).send();
-  } else {
-    next();
+  try {
+    const userEmail = req.user;
+    const dbUser = await User.findOne({ where: { email: userEmail }, attributes: ['id', 'email', 'password', 'role'] });
+
+    let getUser = null; // Initialize getUser as null
+
+    if (dbUser) {
+      console.log('dbUser:', dbUser.dataValues);
+      getUser = dbUser.dataValues; // Assign dbUser.dataValues to getUser
+      console.log('getUser.id:', getUser.id);
+      console.log('getUser.role:', getUser.role);
+    } else {
+      console.log('User not found');
+    }
+
+    // Check if req.user.id is defined
+    if (!req.user || !getUser || !getUser.id) {
+      return res.status(401).send({ error: 'Unauthorized no user or id' });
+    }
+
+    if (getUser.role === "instructor" || getUser.role === "admin") {
+      const assignmentId = req.params.id;
+
+      // Find the assignment by ID
+      const assignment = await Assignment.findByPk(assignmentId);
+
+      if (!assignment) {
+        return res.status(404).send({ error: "Assignment not found" });
+      }
+
+      // Find the course associated with the assignment
+      const course = await Course.findByPk(assignment.courseId, { attributes: ['instructorId'] });
+
+      if (!course) {
+        return res.status(404).send({ error: "Course not found" });
+      }
+
+      console.log(getUser.id);
+      console.log(course.instructorId);
+
+      if (getUser.id === course.instructorId || getUser.role === "admin") {
+        // Delete the assignment
+        const result = await Assignment.destroy({ where: { id: assignmentId } });
+
+        if (result > 0) {
+          res.status(204).send();
+        } else {
+          next();
+        }
+      } else {
+        return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
+      }
+    } else {
+      res.status(403).send({ error: "Only a user with the admin or instructor role can access this information" });
+    }
+  } catch (e) {
+    next(e);
   }
 });
+
 
 module.exports = router;
