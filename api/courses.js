@@ -203,6 +203,11 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
 // GET //courses/:id/roster
 // Returns a CSV file containing information about all of the students currently enrolled in the Course, including names, IDs, and email addresses.
 // Only an authenticated User with 'admin' role or an authenticated 'instructor' User whose ID matches the instructorId of the Course can fetch the course roster.
+const downloadsDir = path.join(__dirname, 'downloads');
+if (!fs.existsSync(downloadsDir)) {
+  fs.mkdirSync(downloadsDir);
+}
+
 router.get('/:id/roster', requireAuthentication, async function (req, res, next) {
   const courseId = req.params.id;
 
@@ -246,17 +251,59 @@ router.get('/:id/roster', requireAuthentication, async function (req, res, next)
 
         const csv = parse(studentData); // Convert JSON to CSV
 
-        res.header("Content-Type", "text/csv");
-        res.attachment(`course_${courseId}_roster.csv`);
-        res.status(200).send(csv);
+        const filePath = path.join(downloadsDir, `course_${courseId}_roster.csv`);
+        fs.writeFileSync(filePath, csv);
+
+        return res.status(200).send({
+          message: 'CSV file created successfully',
+          downloadLink: `/courses/downloads/course_${courseId}_roster.csv`
+        });
       } else {
-        res.status(404).send({ error: 'Course not found' });
+        return res.status(404).send({ error: 'Course not found' });
       }
     } else {
-      res.status(403).send({ error: 'Permission denied' });
+      return res.status(403).send({ error: 'Permission denied' });
     }
   } catch (e) {
     console.error('Error fetching roster:', e);
+    return res.status(500).send({ error: 'Server error' });
+  }
+});
+
+// Route to handle file download
+router.get('/downloads/:filename', function (req, res) {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadsDir, filename);
+  res.download(filePath, (err) => {
+    if (err) {
+      console.error('Error downloading file:', err);
+      return res.status(500).send({ error: 'Error downloading file' });
+    }
+  });
+});
+
+
+// GET //courses/:id/assignments
+// Returns a list containing the Assignment IDs of all Assignments for the Course.
+
+router.get('/:id/assignments', requireAuthentication, async function (req, res, next) {
+  const courseId = req.params.id;
+
+  try {
+    const course = await Course.findByPk(courseId);
+
+    if (course) {
+      const assignments = await Assignment.findAll({
+        where: { courseId },
+        attributes: ['id']
+      });
+      const assignmentIds = assignments.map(assignment => assignment.id);
+      res.status(200).send({ assignmentIds });
+    } else {
+      res.status(404).send({ error: 'Course not found' });
+    }
+  } catch (e) {
+    console.error('Error fetching assignments:', e);
     res.status(500).send({ error: 'Server error' });
   }
 });
