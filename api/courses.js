@@ -81,9 +81,11 @@ router.get('/:id/students', requireAuthentication, async function (req, res, nex
     );
     const currentUser = user[0]; // Get the first user from the result
 
+    const course = await getCourseById(courseId);
+
     console.log('User details from getUserByEmail:', currentUser); // Log the user details
 
-    if (currentUser && (currentUser.role === 'admin' || currentUser.id === courseId)) {
+    if (currentUser && (currentUser.role === 'admin' || currentUser.id === course.instructorId)) {
       const course = await sequelize.query(
         'SELECT id FROM courses WHERE id = :id',
         { 
@@ -132,9 +134,11 @@ router.post('/:id/students', requireAuthentication, async function (req, res, ne
     );
     const currentUser = user[0]; // Get the first user from the result
 
+    const course = await getCourseById(courseId);
+
     console.log('User details from getUserByEmail:', currentUser); // Log the user details
 
-    if (currentUser && (currentUser.role === 'admin' || currentUser.id === courseId)) {
+    if (currentUser && (currentUser.role === 'admin' || currentUser.id === course.instructorId)) {
       const course = await sequelize.query(
         'SELECT id FROM courses WHERE id = :id',
         { 
