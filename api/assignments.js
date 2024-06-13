@@ -63,7 +63,7 @@ router.post("/", requireAuthentication, async function (req, res, next) {
     
     // Log the value of req.user
     console.log('req.user:', req.user);
-    console.log('req.user:', req.user.id);
+    console.log('req.user.id:', req.user.id);
 
     // Check if req.user.id is defined
     if (!req.user || !req.user.id) {
