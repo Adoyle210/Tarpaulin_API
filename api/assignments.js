@@ -81,15 +81,21 @@ router.post("/", requireAuthentication, async function (req, res, next) {
 
     if (getUser.role === "instructor" || getUser.role === "admin") {
       // Check if the course exists
-      const course = await Course.findOne({ where: { id: courseId } });
+      const course = await Course.findOne({ where: { id: courseId }, attributes: ['instructorId'] });
       if (!course) {
         return res.status(404).send({ error: 'Course not found' });
       }
+      console.log(getUser.id);
+      console.log(course.instructorId);
+      if (getUser.id === course.instructorId){
+        const assignment = await Assignment.create(req.body, AssignmentClientFields);
+        res.status(201).send({ id: assignment.id });
+      }else {
+        return res.status(401).send({ error: 'Unauthorized for teachers without matching id' });
+      }
 
-      const assignment = await Assignment.create(req.body, AssignmentClientFields);
-      res.status(201).send({ id: assignment.id });
     } else {
-      return res.status(401).send({ error: 'Unauthorized for students and teachers without matching id' });
+      return res.status(401).send({ error: 'Unauthorized for students' });
     }
   } catch (e) {
     if (e instanceof ValidationError) {
